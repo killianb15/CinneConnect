@@ -124,6 +124,24 @@
   margin-bottom: 1rem;
 }
 
+.invite-form select {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 1rem;
+  margin-bottom: 0.75rem;
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+.divider-or {
+  text-align: center;
+  color: var(--text-secondary);
+  margin: 0.25rem 0 0.5rem;
+  font-size: 0.9rem;
+}
+
 .form-actions {
   display: flex;
   gap: 0.5rem;

@@ -39,8 +39,23 @@ export const leaveGroup = async (groupId) => {
   return response.data;
 };
 
-export const inviteToGroup = async (groupId, inviteEmail) => {
-  const response = await api.post(`/groups/${groupId}/invite`, { inviteEmail });
+export const inviteToGroup = async (groupId, inviteUserId) => {
+  const response = await api.post(`/groups/${groupId}/invite`, { inviteUserId });
+  return response.data;
+};
+
+export const getGroupInvitations = async () => {
+  const response = await api.get('/groups/invitations');
+  return response.data;
+};
+
+export const acceptGroupInvitation = async (invitationId) => {
+  const response = await api.post(`/groups/invitations/${invitationId}/accept`);
+  return response.data;
+};
+
+export const rejectGroupInvitation = async (invitationId) => {
+  const response = await api.post(`/groups/invitations/${invitationId}/reject`);
   return response.data;
 };
 

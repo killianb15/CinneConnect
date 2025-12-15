@@ -1,0 +1,131 @@
+.notif-wrapper {
+  position: relative;
+}
+
+.notif-bell {
+  position: relative;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 50%;
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.notif-count {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: #e63946;
+  color: white;
+  border-radius: 50%;
+  padding: 2px 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.notif-panel {
+  position: absolute;
+  right: 0;
+  margin-top: 0.5rem;
+  width: 320px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: var(--shadow-md);
+  z-index: 10;
+  max-height: 70vh;
+  overflow: auto;
+}
+
+.notif-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.notif-loading {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.notif-error {
+  color: #d9534f;
+  padding: 0.5rem 1rem;
+}
+
+.notif-section {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.notif-section:last-child {
+  border-bottom: none;
+}
+
+.notif-section-title {
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+.notif-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+}
+
+.notif-title {
+  font-weight: 600;
+}
+
+.notif-sub {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.notif-empty {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.notif-actions {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.notif-accept,
+.notif-reject,
+.notif-mark {
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  padding: 0.3rem 0.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.notif-accept {
+  color: #2a9d8f;
+  border-color: #2a9d8f;
+}
+
+.notif-reject {
+  color: #e63946;
+  border-color: #e63946;
+}
+
+.notif-mark {
+  font-size: 0.85rem;
+}
+
+.notif-item.read .notif-title {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+

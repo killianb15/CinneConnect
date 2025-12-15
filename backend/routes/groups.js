@@ -206,6 +206,11 @@ router.post('/:groupId/join', authenticateToken, groupController.joinGroup);
  */
 router.post('/:groupId/leave', authenticateToken, groupController.leaveGroup);
 
+// Invitations
+router.get('/invitations', authenticateToken, groupController.getGroupInvitations);
+router.post('/invitations/:invitationId/accept', authenticateToken, groupController.acceptGroupInvitation);
+router.post('/invitations/:invitationId/reject', authenticateToken, groupController.rejectGroupInvitation);
+
 /**
  * @swagger
  * /api/groups/{groupId}/invite:

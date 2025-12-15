@@ -10,6 +10,7 @@ import { isAuthenticated, getCurrentUser, logout } from '../services/authService
 import { getLatestMovies } from '../services/movieService';
 import { getFeed, getGlobalFeed } from '../services/feedService';
 import { getFriendRequests, acceptFriendRequest, rejectFriendRequest } from '../services/friendService';
+import NotificationBell from '../components/NotificationBell';
 import StarRating from '../components/StarRating';
 import AuthModal from '../components/AuthModal';
 import useRefreshData from '../hooks/useRefreshData';
@@ -138,6 +139,7 @@ function HomePage() {
           <div className="header-section">
             <h1>🎬 CinéConnect</h1>
             <div className="user-info">
+              <NotificationBell onGroupAccepted={(groupId) => navigate(`/groupes/${groupId}`)} />
               <span>Bonjour, {user?.pseudo}!</span>
               <Link to={`/profil/${user?.id}`} className="nav-link">Mon profil</Link>
               <Link to="/groupes" className="nav-link">Groupes</Link>

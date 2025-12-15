@@ -445,11 +445,11 @@ const inviteToGroup = async (req, res) => {
   try {
     const { groupId } = req.params;
     const userId = req.user.id;
-    const { inviteEmail } = req.body;
+    const { inviteUserId } = req.body;
 
-    if (!inviteEmail) {
+    if (!inviteUserId) {
       return res.status(400).json({
-        error: 'L\'email de l\'invité est requis'
+        error: 'L\'utilisateur à inviter est requis'
       });
     }
 
@@ -459,17 +459,17 @@ const inviteToGroup = async (req, res) => {
       [groupId, userId]
     );
 
-    if (membres.length === 0 || !['admin', 'moderateur'].includes(membres[0].role)) {
+    if (membres.length === 0) {
       return res.status(403).json({
         error: 'Accès refusé',
-        message: 'Vous devez être admin ou modérateur pour inviter des membres'
+        message: 'Vous devez être membre du groupe pour inviter des membres'
       });
     }
 
-    // Trouver l'utilisateur invité
+    // Vérifier que l'utilisateur invité existe
     const [invites] = await pool.execute(
-      'SELECT id FROM users WHERE email = ?',
-      [inviteEmail]
+      'SELECT id FROM users WHERE id = ?',
+      [inviteUserId]
     );
 
     if (invites.length === 0) {
@@ -479,6 +479,20 @@ const inviteToGroup = async (req, res) => {
     }
 
     const inviteId = invites[0].id;
+
+    // Vérifier que c'est un ami pour ce flux
+    const [friends] = await pool.execute(
+      `SELECT id FROM friends 
+       WHERE (user1_id = ? AND user2_id = ?) OR (user1_id = ? AND user2_id = ?)`,
+      [userId, inviteId, inviteId, userId]
+    );
+
+    if (friends.length === 0) {
+      return res.status(403).json({
+        error: 'Accès refusé',
+        message: 'Vous pouvez uniquement inviter vos amis'
+      });
+    }
 
     // Vérifier si déjà membre
     const [existing] = await pool.execute(
@@ -585,6 +599,140 @@ const addFilmToGroup = async (req, res) => {
   }
 };
 
+/**
+ * Récupère les invitations aux groupes pour l'utilisateur connecté
+ */
+const getGroupInvitations = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const [invitations] = await pool.execute(
+      `SELECT gi.id, gi.groupe_id, gi.inviteur_id, gi.statut, gi.created_at,
+              g.titre AS groupe_titre,
+              u.pseudo AS inviteur_pseudo
+       FROM groupe_invitations gi
+       JOIN groupes g ON g.id = gi.groupe_id
+       JOIN users u ON u.id = gi.inviteur_id
+       WHERE gi.invite_id = ? AND gi.statut = 'en_attente'
+       ORDER BY gi.created_at DESC
+       LIMIT 50`,
+      [userId]
+    );
+
+    res.json({
+      invitations: invitations.map(inv => ({
+        id: inv.id,
+        groupId: inv.groupe_id,
+        groupTitle: inv.groupe_titre,
+        inviterId: inv.inviteur_id,
+        inviterPseudo: inv.inviteur_pseudo,
+        status: inv.statut,
+        createdAt: inv.created_at
+      }))
+    });
+  } catch (error) {
+    console.error('Erreur lors de la récupération des invitations de groupe:', error);
+    res.status(500).json({
+      error: 'Erreur serveur',
+      message: 'Une erreur est survenue'
+    });
+  }
+};
+
+/**
+ * Accepte une invitation de groupe
+ */
+const acceptGroupInvitation = async (req, res) => {
+  try {
+    const { invitationId } = req.params;
+    const userId = req.user.id;
+
+    // Vérifier l'invitation
+    const [invits] = await pool.execute(
+      `SELECT id, groupe_id, statut FROM groupe_invitations 
+       WHERE id = ? AND invite_id = ?`,
+      [invitationId, userId]
+    );
+
+    if (invits.length === 0) {
+      return res.status(404).json({ error: 'Invitation non trouvée' });
+    }
+
+    const invitation = invits[0];
+    if (invitation.statut !== 'en_attente') {
+      return res.status(400).json({ error: 'Invitation déjà traitée' });
+    }
+
+    // Vérifier si déjà membre
+    const [existing] = await pool.execute(
+      'SELECT id FROM groupe_membres WHERE groupe_id = ? AND user_id = ?',
+      [invitation.groupe_id, userId]
+    );
+
+    if (existing.length === 0) {
+      await pool.execute(
+        'INSERT INTO groupe_membres (groupe_id, user_id, role) VALUES (?, ?, ?)',
+        [invitation.groupe_id, userId, 'membre']
+      );
+    }
+
+    // Mettre à jour l'invitation
+    await pool.execute(
+      `UPDATE groupe_invitations 
+       SET statut = 'acceptee' 
+       WHERE id = ?`,
+      [invitationId]
+    );
+
+    res.json({ message: 'Invitation acceptée' });
+  } catch (error) {
+    console.error('Erreur lors de l\'acceptation de l\'invitation:', error);
+    res.status(500).json({
+      error: 'Erreur serveur',
+      message: 'Une erreur est survenue'
+    });
+  }
+};
+
+/**
+ * Refuse une invitation de groupe
+ */
+const rejectGroupInvitation = async (req, res) => {
+  try {
+    const { invitationId } = req.params;
+    const userId = req.user.id;
+
+    const [invits] = await pool.execute(
+      `SELECT id, statut FROM groupe_invitations 
+       WHERE id = ? AND invite_id = ?`,
+      [invitationId, userId]
+    );
+
+    if (invits.length === 0) {
+      return res.status(404).json({ error: 'Invitation non trouvée' });
+    }
+
+    const invitation = invits[0];
+    if (invitation.statut !== 'en_attente') {
+      return res.status(400).json({ error: 'Invitation déjà traitée' });
+    }
+
+    await pool.execute(
+      `UPDATE groupe_invitations 
+       SET statut = 'refusee' 
+       WHERE id = ?`,
+      [invitationId]
+    );
+
+    res.json({ message: 'Invitation refusée' });
+  } catch (error) {
+    console.error('Erreur lors du refus de l\'invitation:', error);
+    res.status(500).json({
+      error: 'Erreur serveur',
+      message: 'Une erreur est survenue'
+    });
+  }
+};
+
 module.exports = {
   getGroups,
   getGroupDetails,
@@ -594,6 +742,9 @@ module.exports = {
   joinGroup,
   leaveGroup,
   inviteToGroup,
-  addFilmToGroup
+  addFilmToGroup,
+  getGroupInvitations,
+  acceptGroupInvitation,
+  rejectGroupInvitation
 };
 

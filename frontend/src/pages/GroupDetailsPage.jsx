@@ -9,6 +9,7 @@ import { getLatestMovies } from '../services/movieService';
 import { createGroupMessage } from '../services/groupMessageService';
 import { getCurrentUser, isAuthenticated } from '../services/authService';
 import { reportContent } from '../services/moderationService';
+import { getFriends } from '../services/friendService';
 import useGroupMessages from '../hooks/useGroupMessages';
 import './GroupDetailsPage.css';
 
@@ -20,6 +21,10 @@ function GroupDetailsPage() {
   const [showInviteForm, setShowInviteForm] = useState(false);
   const [showAddFilmForm, setShowAddFilmForm] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
+  const [friends, setFriends] = useState([]);
+  const [loadingFriends, setLoadingFriends] = useState(false);
+  const [selectedFriendId, setSelectedFriendId] = useState('');
+  const [friendsLoaded, setFriendsLoaded] = useState(false);
   const [films, setFilms] = useState([]);
   const [selectedFilmId, setSelectedFilmId] = useState('');
   const [error, setError] = useState('');
@@ -62,6 +67,27 @@ function GroupDetailsPage() {
       setFilms(data.films || []);
     } catch (err) {
       console.error('Erreur:', err);
+    }
+  };
+
+  const loadFriends = async () => {
+    setLoadingFriends(true);
+    try {
+      const data = await getFriends();
+      setFriends(data.friends || []);
+      setFriendsLoaded(true);
+    } catch (err) {
+      console.error('Erreur lors du chargement des amis:', err);
+    } finally {
+      setLoadingFriends(false);
+    }
+  };
+
+  const toggleInviteForm = () => {
+    const next = !showInviteForm;
+    setShowInviteForm(next);
+    if (next && !friendsLoaded && !loadingFriends) {
+      loadFriends();
     }
   };
 
@@ -112,8 +138,16 @@ function GroupDetailsPage() {
     e.preventDefault();
     setError('');
     try {
-      await inviteToGroup(groupId, inviteEmail);
+      const friendId = selectedFriendId ? parseInt(selectedFriendId, 10) : null;
+
+      if (!friendId) {
+        setError('Sélectionnez un ami');
+        return;
+      }
+
+      await inviteToGroup(groupId, friendId);
       setInviteEmail('');
+      setSelectedFriendId('');
       setShowInviteForm(false);
     } catch (err) {
       setError(err.response?.data?.error || 'Erreur');
@@ -158,7 +192,7 @@ function GroupDetailsPage() {
     return <div className="group-details-page"><div className="error">Groupe non trouvé</div></div>;
   }
 
-  const canManage = group.groupe.userRole && ['admin', 'moderateur'].includes(group.groupe.userRole);
+  const canInvite = !!group.groupe.userRole; // tout membre peut inviter
 
   return (
     <div className="group-details-page">
@@ -175,9 +209,9 @@ function GroupDetailsPage() {
               <button onClick={handleJoin} className="action-btn join-btn">Rejoindre</button>
             ) : (
               <>
-                {canManage && (
+                {canInvite && (
                   <>
-                    <button onClick={() => setShowInviteForm(!showInviteForm)} className="action-btn">
+                    <button onClick={toggleInviteForm} className="action-btn">
                       Inviter
                     </button>
                     <button onClick={() => setShowAddFilmForm(!showAddFilmForm)} className="action-btn">
@@ -196,13 +230,20 @@ function GroupDetailsPage() {
         {showInviteForm && (
           <form onSubmit={handleInvite} className="invite-form">
             <h3>Inviter un membre</h3>
-            <input
-              type="text"
-              value={inviteEmail}
-              onChange={(e) => setInviteEmail(e.target.value)}
-              placeholder="Email de l'utilisateur"
-              required
-            />
+            <label>
+              Sélectionner un ami
+              <select
+                value={selectedFriendId}
+                onChange={(e) => setSelectedFriendId(e.target.value)}
+                disabled={loadingFriends}
+                required
+              >
+                <option value="">-- Choisir --</option>
+                {friends.map(friend => (
+                  <option key={friend.id} value={friend.id}>{friend.pseudo}</option>
+                ))}
+              </select>
+            </label>
             <div className="form-actions">
               <button type="submit" className="submit-button">Inviter</button>
               <button type="button" onClick={() => setShowInviteForm(false)}>Annuler</button>
