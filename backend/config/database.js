@@ -262,6 +262,44 @@ async function initializeDatabase() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
+    // Table des événements cinéma dans les groupes
+    await connection.execute(`
+      CREATE TABLE IF NOT EXISTS groupe_evenements (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        groupe_id INT NOT NULL,
+        createur_id INT NOT NULL,
+        titre VARCHAR(255) NOT NULL,
+        description TEXT,
+        film_id INT,
+        type_evenement VARCHAR(50) DEFAULT 'projection',
+        date_evenement DATETIME NOT NULL,
+        lieu VARCHAR(255),
+        nombre_participants_max INT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (groupe_id) REFERENCES groupes(id) ON DELETE CASCADE,
+        FOREIGN KEY (createur_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (film_id) REFERENCES films(id) ON DELETE SET NULL,
+        CONSTRAINT chk_type_evenement CHECK (type_evenement IN ('avant_premiere', 'projection', 'festival', 'autre')),
+        INDEX idx_groupe_evenements_groupe_id (groupe_id),
+        INDEX idx_groupe_evenements_date (date_evenement)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    // Table des participants aux événements
+    await connection.execute(`
+      CREATE TABLE IF NOT EXISTS evenement_participants (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        evenement_id INT NOT NULL,
+        user_id INT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (evenement_id) REFERENCES groupe_evenements(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        UNIQUE KEY unique_evenement_user (evenement_id, user_id),
+        INDEX idx_evenement_participants_evenement_id (evenement_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
     // Table des relations d'amitié (followers/following)
     await connection.execute(`
       CREATE TABLE IF NOT EXISTS user_follows (

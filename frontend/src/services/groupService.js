@@ -64,4 +64,30 @@ export const addFilmToGroup = async (groupId, filmId) => {
   return response.data;
 };
 
+// Services pour les événements
+export const getGroupEvents = async (groupId) => {
+  const response = await api.get(`/groups/${groupId}/events`);
+  return response.data;
+};
+
+export const createEvent = async (groupId, eventData) => {
+  const response = await api.post(`/groups/${groupId}/events`, eventData);
+  return response.data;
+};
+
+export const joinEvent = async (eventId) => {
+  const response = await api.post(`/groups/events/${eventId}/join`);
+  return response.data;
+};
+
+export const leaveEvent = async (eventId) => {
+  const response = await api.post(`/groups/events/${eventId}/leave`);
+  return response.data;
+};
+
+export const deleteEvent = async (eventId) => {
+  const response = await api.delete(`/groups/events/${eventId}`);
+  return response.data;
+};
+
 

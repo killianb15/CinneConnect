@@ -2,10 +2,10 @@
  * Page de détails d'un groupe
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { getGroupDetails, joinGroup, leaveGroup, inviteToGroup, addFilmToGroup } from '../services/groupService';
-import { getLatestMovies } from '../services/movieService';
+import { getGroupDetails, joinGroup, leaveGroup, inviteToGroup, addFilmToGroup, getGroupEvents, createEvent, joinEvent, leaveEvent, deleteEvent } from '../services/groupService';
+import { getLatestMovies, searchMovies } from '../services/movieService';
 import { createGroupMessage } from '../services/groupMessageService';
 import { getCurrentUser, isAuthenticated } from '../services/authService';
 import { reportContent } from '../services/moderationService';
@@ -33,20 +33,30 @@ function GroupDetailsPage() {
   const messagesEndRef = useRef(null);
   const currentUser = getCurrentUser();
 
+  // États pour les événements
+  const [events, setEvents] = useState([]);
+  const [loadingEvents, setLoadingEvents] = useState(false);
+  const [showEventForm, setShowEventForm] = useState(false);
+  const [eventForm, setEventForm] = useState({
+    titre: '',
+    description: '',
+    filmId: '',
+    typeEvenement: 'projection',
+    dateEvenement: '',
+    lieu: '',
+    nombreParticipantsMax: ''
+  });
+  
+  // États pour la recherche de films dans le formulaire d'événement
+  const [eventFilmSearch, setEventFilmSearch] = useState('');
+  const [eventFilmResults, setEventFilmResults] = useState([]);
+  const [searchingFilms, setSearchingFilms] = useState(false);
+  const [selectedEventFilm, setSelectedEventFilm] = useState(null);
+
   // Utiliser le hook WebSocket pour les messages en temps réel
   const { messages, loading: messagesLoading } = useGroupMessages(
     group && group.groupe.userRole ? groupId : null
   );
-
-  useEffect(() => {
-    loadGroup();
-    loadFilms();
-  }, [groupId]);
-
-  // Scroll automatique vers le bas quand de nouveaux messages arrivent
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
 
   const loadGroup = async () => {
     setLoading(true);
@@ -67,6 +77,124 @@ function GroupDetailsPage() {
       setFilms(data.films || []);
     } catch (err) {
       console.error('Erreur:', err);
+    }
+  };
+
+  // Recherche de films pour le formulaire d'événement
+  useEffect(() => {
+    const searchEventFilms = async () => {
+      if (!eventFilmSearch.trim() || eventFilmSearch.length < 2) {
+        setEventFilmResults([]);
+        return;
+      }
+
+      setSearchingFilms(true);
+      try {
+        const data = await searchMovies(eventFilmSearch.trim());
+        setEventFilmResults(data.films || []);
+      } catch (err) {
+        console.error('Erreur lors de la recherche de films:', err);
+        setEventFilmResults([]);
+      } finally {
+        setSearchingFilms(false);
+      }
+    };
+
+    const timeoutId = setTimeout(searchEventFilms, 300);
+    return () => clearTimeout(timeoutId);
+  }, [eventFilmSearch]);
+
+  const loadEvents = useCallback(async () => {
+    if (!groupId) return;
+    setLoadingEvents(true);
+    try {
+      const data = await getGroupEvents(groupId);
+      setEvents(data.evenements || []);
+    } catch (err) {
+      console.error('Erreur lors du chargement des événements:', err);
+    } finally {
+      setLoadingEvents(false);
+    }
+  }, [groupId]);
+
+  useEffect(() => {
+    loadGroup();
+    loadFilms();
+  }, [groupId]);
+
+  useEffect(() => {
+    if (group?.groupe?.userRole) {
+      loadEvents();
+    }
+  }, [group, loadEvents]);
+
+  // Scroll automatique vers le bas quand de nouveaux messages arrivent
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const handleCreateEvent = async (e) => {
+    e.preventDefault();
+    setError('');
+    try {
+      const eventData = {
+        ...eventForm,
+        filmId: selectedEventFilm ? (selectedEventFilm.id || selectedEventFilm.tmdbId) : null,
+        nombreParticipantsMax: eventForm.nombreParticipantsMax ? parseInt(eventForm.nombreParticipantsMax) : null
+      };
+      await createEvent(groupId, eventData);
+      setEventForm({
+        titre: '',
+        description: '',
+        filmId: '',
+        typeEvenement: 'projection',
+        dateEvenement: '',
+        lieu: '',
+        nombreParticipantsMax: ''
+      });
+      setEventFilmSearch('');
+      setEventFilmResults([]);
+      setSelectedEventFilm(null);
+      setShowEventForm(false);
+      loadEvents();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Erreur lors de la création de l\'événement');
+    }
+  };
+
+  const handleSelectEventFilm = (film) => {
+    setSelectedEventFilm(film);
+    setEventFilmSearch(film.titre);
+    setEventFilmResults([]);
+  };
+
+  const handleJoinEvent = async (eventId) => {
+    try {
+      await joinEvent(eventId);
+      loadEvents();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Erreur');
+    }
+  };
+
+  const handleLeaveEvent = async (eventId) => {
+    try {
+      await leaveEvent(eventId);
+      loadEvents();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Erreur');
+    }
+  };
+
+  const handleDeleteEvent = async (eventId) => {
+    if (!window.confirm('Êtes-vous sûr de vouloir supprimer cet événement ?')) {
+      return;
+    }
+    try {
+      await deleteEvent(eventId);
+      loadEvents();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Erreur');
     }
   };
 
@@ -227,6 +355,9 @@ function GroupDetailsPage() {
                     <button onClick={() => setShowAddFilmForm(!showAddFilmForm)} className="action-btn">
                       Ajouter un film
                     </button>
+                    <button onClick={() => setShowEventForm(!showEventForm)} className="action-btn">
+                      📅 Créer un événement
+                    </button>
                   </>
                 )}
                 <button onClick={handleLeave} className="action-btn leave-btn">Quitter</button>
@@ -277,6 +408,195 @@ function GroupDetailsPage() {
             <div className="form-actions">
               <button type="submit" className="submit-button">Ajouter</button>
               <button type="button" onClick={() => setShowAddFilmForm(false)}>Annuler</button>
+            </div>
+          </form>
+        )}
+
+        {showEventForm && (
+          <form onSubmit={handleCreateEvent} className="add-film-form">
+            <h3>🎬 Créer un événement cinéma</h3>
+            <label>
+              Titre *
+              <input
+                type="text"
+                value={eventForm.titre}
+                onChange={(e) => setEventForm({ ...eventForm, titre: e.target.value })}
+                required
+                placeholder="Ex: Avant-première de Dune"
+              />
+            </label>
+            <label>
+              Description
+              <textarea
+                value={eventForm.description}
+                onChange={(e) => setEventForm({ ...eventForm, description: e.target.value })}
+                placeholder="Description de l'événement..."
+                rows="3"
+              />
+            </label>
+            <label>
+              Film (optionnel)
+              <div style={{ position: 'relative' }}>
+                <input
+                  type="text"
+                  value={eventFilmSearch}
+                  onChange={(e) => {
+                    setEventFilmSearch(e.target.value);
+                    if (!e.target.value.trim()) {
+                      setSelectedEventFilm(null);
+                      setEventForm({ ...eventForm, filmId: '' });
+                    }
+                  }}
+                  placeholder="Rechercher un film (DB + TMDB)..."
+                  style={{ width: '100%', marginBottom: 0 }}
+                />
+                {selectedEventFilm && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedEventFilm(null);
+                      setEventFilmSearch('');
+                      setEventForm({ ...eventForm, filmId: '' });
+                    }}
+                    style={{
+                      position: 'absolute',
+                      right: '8px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      background: 'transparent',
+                      border: 'none',
+                      cursor: 'pointer',
+                      fontSize: '1.2rem'
+                    }}
+                    title="Effacer la sélection"
+                  >
+                    ×
+                  </button>
+                )}
+                {eventFilmResults.length > 0 && !selectedEventFilm && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 0,
+                    right: 0,
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '4px',
+                    maxHeight: '300px',
+                    overflowY: 'auto',
+                    zIndex: 1000,
+                    marginTop: '4px',
+                    boxShadow: '0 4px 8px rgba(0,0,0,0.1)'
+                  }}>
+                    {eventFilmResults.map(film => (
+                      <div
+                        key={film.id || film.tmdbId}
+                        onClick={() => handleSelectEventFilm(film)}
+                        style={{
+                          padding: '0.75rem',
+                          cursor: 'pointer',
+                          borderBottom: '1px solid var(--border-color)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.75rem'
+                        }}
+                        onMouseEnter={(e) => e.target.style.background = 'var(--bg-hover)'}
+                        onMouseLeave={(e) => e.target.style.background = 'var(--bg-card)'}
+                      >
+                        {film.afficheUrl && (
+                          <img
+                            src={film.afficheUrl}
+                            alt={film.titre}
+                            style={{ width: '40px', height: '60px', objectFit: 'cover', borderRadius: '4px' }}
+                          />
+                        )}
+                        <div>
+                          <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{film.titre}</div>
+                          {film.dateSortie && (
+                            <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                              {new Date(film.dateSortie).getFullYear()}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {searchingFilms && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 0,
+                    right: 0,
+                    padding: '0.75rem',
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '4px',
+                    marginTop: '4px',
+                    fontSize: '0.9rem',
+                    color: 'var(--text-secondary)'
+                  }}>
+                    Recherche en cours...
+                  </div>
+                )}
+              </div>
+              {selectedEventFilm && (
+                <div style={{
+                  marginTop: '0.5rem',
+                  padding: '0.5rem',
+                  background: 'var(--bg-secondary)',
+                  borderRadius: '4px',
+                  fontSize: '0.9rem',
+                  color: 'var(--text-primary)'
+                }}>
+                  Film sélectionné : <strong>{selectedEventFilm.titre}</strong>
+                  {selectedEventFilm.dateSortie && ` (${new Date(selectedEventFilm.dateSortie).getFullYear()})`}
+                </div>
+              )}
+            </label>
+            <label>
+              Type d'événement
+              <select
+                value={eventForm.typeEvenement}
+                onChange={(e) => setEventForm({ ...eventForm, typeEvenement: e.target.value })}
+              >
+                <option value="projection">Projection</option>
+                <option value="avant_premiere">Avant-première</option>
+                <option value="festival">Festival</option>
+                <option value="autre">Autre</option>
+              </select>
+            </label>
+            <label>
+              Date et heure *
+              <input
+                type="datetime-local"
+                value={eventForm.dateEvenement}
+                onChange={(e) => setEventForm({ ...eventForm, dateEvenement: e.target.value })}
+                required
+              />
+            </label>
+            <label>
+              Lieu
+              <input
+                type="text"
+                value={eventForm.lieu}
+                onChange={(e) => setEventForm({ ...eventForm, lieu: e.target.value })}
+                placeholder="Ex: Cinéma Le Grand Rex, Paris"
+              />
+            </label>
+            <label>
+              Nombre max de participants (optionnel)
+              <input
+                type="number"
+                value={eventForm.nombreParticipantsMax}
+                onChange={(e) => setEventForm({ ...eventForm, nombreParticipantsMax: e.target.value })}
+                min="1"
+                placeholder="Illimité si vide"
+              />
+            </label>
+            <div className="form-actions">
+              <button type="submit" className="submit-button">Créer l'événement</button>
+              <button type="button" onClick={() => setShowEventForm(false)}>Annuler</button>
             </div>
           </form>
         )}
@@ -411,6 +731,108 @@ function GroupDetailsPage() {
               </div>
             )}
           </div>
+
+          {/* Section Agenda des Événements */}
+          {group.groupe.userRole && (
+            <div className="group-section">
+              <h2>📅 Agenda partagé des évènements liés aux groupes</h2>
+              {loadingEvents ? (
+                <p className="empty-message">Chargement des événements...</p>
+              ) : events.length === 0 ? (
+                <p className="empty-message">Aucun événement prévu</p>
+              ) : (
+                <div className="events-agenda">
+                  <div className="agenda-events">
+                    {events
+                      .sort((a, b) => new Date(a.dateEvenement) - new Date(b.dateEvenement))
+                      .map(event => (
+                    <div key={event.id} className="event-card">
+                      <div className="event-header">
+                        <h3>{event.titre}</h3>
+                        {currentUser && (event.createur.id === currentUser.id || group.groupe.userRole === 'admin' || group.groupe.userRole === 'moderateur') && (
+                          <button
+                            onClick={() => handleDeleteEvent(event.id)}
+                            className="delete-event-btn"
+                            title="Supprimer l'événement"
+                          >
+                            🗑️
+                          </button>
+                        )}
+                      </div>
+                      <div className="event-type-badge">
+                        {event.typeEvenement === 'avant_premiere' && '🎉 Avant-première'}
+                        {event.typeEvenement === 'projection' && '🎬 Projection'}
+                        {event.typeEvenement === 'festival' && '🎪 Festival'}
+                        {event.typeEvenement === 'autre' && '📅 Autre'}
+                      </div>
+                      {event.film && (
+                        <div className="event-film">
+                          {event.film.afficheUrl && (
+                            <img src={event.film.afficheUrl} alt={event.film.titre} className="event-film-poster" />
+                          )}
+                          <div className="event-film-info">
+                            <strong>{event.film.titre}</strong>
+                          </div>
+                        </div>
+                      )}
+                      {event.description && (
+                        <p className="event-description">{event.description}</p>
+                      )}
+                      <div className="event-details">
+                        <div className="event-detail">
+                          <strong>📅 Date :</strong> {new Date(event.dateEvenement).toLocaleDateString('fr-FR', {
+                            weekday: 'long',
+                            day: 'numeric',
+                            month: 'long',
+                            year: 'numeric'
+                          })}
+                        </div>
+                        <div className="event-detail">
+                          <strong>🕐 Heure :</strong> {new Date(event.dateEvenement).toLocaleTimeString('fr-FR', {
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </div>
+                        {event.lieu && (
+                          <div className="event-detail">
+                            <strong>📍 Lieu :</strong> {event.lieu}
+                          </div>
+                        )}
+                        <div className="event-detail">
+                          <strong>👥 Participants :</strong> {event.nombreParticipants}
+                          {event.nombreParticipantsMax && ` / ${event.nombreParticipantsMax}`}
+                        </div>
+                        <div className="event-detail">
+                          <strong>👤 Créé par :</strong> {event.createur.pseudo}
+                        </div>
+                      </div>
+                      <div className="event-actions">
+                        {event.userParticipates ? (
+                          <button
+                            onClick={() => handleLeaveEvent(event.id)}
+                            className="event-action-btn leave-event-btn"
+                          >
+                            Se désinscrire
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleJoinEvent(event.id)}
+                            className="event-action-btn join-event-btn"
+                            disabled={event.nombreParticipantsMax && event.nombreParticipants >= event.nombreParticipantsMax}
+                          >
+                            {event.nombreParticipantsMax && event.nombreParticipants >= event.nombreParticipantsMax
+                              ? 'Complet'
+                              : 'Participer'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>

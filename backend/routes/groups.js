@@ -273,6 +273,13 @@ router.post('/:groupId/invite', authenticateToken, groupController.inviteToGroup
  */
 router.post('/:groupId/films', authenticateToken, groupController.addFilmToGroup);
 
+// Routes pour les événements
+router.get('/:groupId/events', authenticateToken, groupController.getGroupEvents);
+router.post('/:groupId/events', authenticateToken, groupController.createEvent);
+router.post('/events/:eventId/join', authenticateToken, groupController.joinEvent);
+router.post('/events/:eventId/leave', authenticateToken, groupController.leaveEvent);
+router.delete('/events/:eventId', authenticateToken, groupController.deleteEvent);
+
 module.exports = router;
 
 

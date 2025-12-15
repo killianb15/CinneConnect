@@ -779,6 +779,429 @@ const rejectGroupInvitation = async (req, res) => {
   }
 };
 
+/**
+ * Crée un événement cinéma dans un groupe
+ */
+const createEvent = async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const userId = req.user.id;
+    const { titre, description, filmId, typeEvenement, dateEvenement, lieu, nombreParticipantsMax } = req.body;
+
+    // Validation
+    if (!titre || !titre.trim()) {
+      return res.status(400).json({
+        error: 'Données invalides',
+        message: 'Le titre est obligatoire'
+      });
+    }
+
+    if (!dateEvenement) {
+      return res.status(400).json({
+        error: 'Données invalides',
+        message: 'La date de l\'événement est obligatoire'
+      });
+    }
+
+    // Vérifier que l'utilisateur est membre du groupe
+    const [membres] = await pool.execute(
+      'SELECT role FROM groupe_membres WHERE groupe_id = ? AND user_id = ?',
+      [groupId, userId]
+    );
+
+    if (membres.length === 0) {
+      return res.status(403).json({
+        error: 'Accès refusé',
+        message: 'Vous devez être membre du groupe pour créer un événement'
+      });
+    }
+
+    // Vérifier que le film existe si filmId est fourni
+    // Le filmId peut être soit un ID local, soit un tmdbId
+    let finalFilmId = filmId;
+    if (filmId) {
+      const [films] = await pool.execute('SELECT id, tmdb_id FROM films WHERE id = ? OR tmdb_id = ?', [filmId, filmId]);
+      if (films.length === 0) {
+        // Si c'est un tmdbId (grand nombre) et que le film n'existe pas, on le crée depuis TMDB
+        if (!isNaN(filmId) && parseInt(filmId) > 1000) {
+          const movieController = require('./movieController');
+          try {
+            const createdFilmId = await movieController.createFilmFromPublicData(parseInt(filmId));
+            if (!createdFilmId) {
+              return res.status(404).json({
+                error: 'Film non trouvé'
+              });
+            }
+            finalFilmId = createdFilmId;
+          } catch (error) {
+            console.error('Erreur lors de la création du film depuis TMDB:', error);
+            return res.status(404).json({
+              error: 'Film non trouvé'
+            });
+          }
+        } else {
+          return res.status(404).json({
+            error: 'Film non trouvé'
+          });
+        }
+      } else {
+        finalFilmId = films[0].id;
+      }
+    }
+
+    // Créer l'événement
+    const [result] = await pool.execute(
+      `INSERT INTO groupe_evenements (groupe_id, createur_id, titre, description, film_id, type_evenement, date_evenement, lieu, nombre_participants_max)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        groupId,
+        userId,
+        titre.trim(),
+        description?.trim() || null,
+        finalFilmId || null,
+        typeEvenement || 'projection',
+        dateEvenement,
+        lieu?.trim() || null,
+        nombreParticipantsMax || null
+      ]
+    );
+
+    // Récupérer l'événement créé avec les détails
+    const [events] = await pool.execute(`
+      SELECT 
+        e.id,
+        e.groupe_id,
+        e.createur_id,
+        e.titre,
+        e.description,
+        e.film_id,
+        e.type_evenement,
+        e.date_evenement,
+        e.lieu,
+        e.nombre_participants_max,
+        e.created_at,
+        u.pseudo as createur_pseudo,
+        f.titre as film_titre,
+        f.affiche_url as film_affiche
+      FROM groupe_evenements e
+      JOIN users u ON e.createur_id = u.id
+      LEFT JOIN films f ON e.film_id = f.id
+      WHERE e.id = ?
+    `, [result.insertId]);
+
+    const event = events[0];
+
+    // Ajouter automatiquement le créateur comme participant
+    await pool.execute(
+      'INSERT INTO evenement_participants (evenement_id, user_id) VALUES (?, ?)',
+      [result.insertId, userId]
+    );
+
+    // Récupérer le nombre de participants
+    const [participantsCount] = await pool.execute(
+      'SELECT COUNT(*) as count FROM evenement_participants WHERE evenement_id = ?',
+      [result.insertId]
+    );
+
+    res.status(201).json({
+      message: 'Événement créé avec succès',
+      evenement: {
+        id: event.id,
+        groupeId: event.groupe_id,
+        createur: {
+          id: event.createur_id,
+          pseudo: event.createur_pseudo
+        },
+        titre: event.titre,
+        description: event.description,
+        filmId: event.film_id,
+        film: event.film_id ? {
+          id: event.film_id,
+          titre: event.film_titre,
+          afficheUrl: event.film_affiche
+        } : null,
+        typeEvenement: event.type_evenement,
+        dateEvenement: event.date_evenement,
+        lieu: event.lieu,
+        nombreParticipantsMax: event.nombre_participants_max,
+        nombreParticipants: parseInt(participantsCount[0].count),
+        createdAt: event.created_at
+      }
+    });
+  } catch (error) {
+    console.error('Erreur lors de la création de l\'événement:', error);
+    res.status(500).json({
+      error: 'Erreur serveur',
+      message: 'Une erreur est survenue lors de la création de l\'événement'
+    });
+  }
+};
+
+/**
+ * Récupère tous les événements d'un groupe
+ */
+const getGroupEvents = async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const userId = req.user.id;
+
+    // Vérifier que l'utilisateur est membre du groupe
+    const [membres] = await pool.execute(
+      'SELECT role FROM groupe_membres WHERE groupe_id = ? AND user_id = ?',
+      [groupId, userId]
+    );
+
+    if (membres.length === 0) {
+      return res.status(403).json({
+        error: 'Accès refusé',
+        message: 'Vous devez être membre du groupe pour voir les événements'
+      });
+    }
+
+    // Récupérer les événements
+    const [events] = await pool.execute(`
+      SELECT 
+        e.id,
+        e.groupe_id,
+        e.createur_id,
+        e.titre,
+        e.description,
+        e.film_id,
+        e.type_evenement,
+        e.date_evenement,
+        e.lieu,
+        e.nombre_participants_max,
+        e.created_at,
+        u.pseudo as createur_pseudo,
+        u.photo_url as createur_photo,
+        f.titre as film_titre,
+        f.affiche_url as film_affiche,
+        COUNT(DISTINCT ep.user_id) as nombre_participants,
+        EXISTS(SELECT 1 FROM evenement_participants ep2 WHERE ep2.evenement_id = e.id AND ep2.user_id = ?) as user_participates
+      FROM groupe_evenements e
+      JOIN users u ON e.createur_id = u.id
+      LEFT JOIN films f ON e.film_id = f.id
+      LEFT JOIN evenement_participants ep ON e.id = ep.evenement_id
+      WHERE e.groupe_id = ?
+      GROUP BY e.id, e.groupe_id, e.createur_id, e.titre, e.description, e.film_id, e.type_evenement, e.date_evenement, e.lieu, e.nombre_participants_max, e.created_at, u.pseudo, u.photo_url, f.titre, f.affiche_url
+      ORDER BY e.date_evenement ASC
+    `, [userId, groupId]);
+
+    res.json({
+      evenements: events.map(event => ({
+        id: event.id,
+        groupeId: event.groupe_id,
+        createur: {
+          id: event.createur_id,
+          pseudo: event.createur_pseudo,
+          photoUrl: event.createur_photo
+        },
+        titre: event.titre,
+        description: event.description,
+        filmId: event.film_id,
+        film: event.film_id ? {
+          id: event.film_id,
+          titre: event.film_titre,
+          afficheUrl: event.film_affiche
+        } : null,
+        typeEvenement: event.type_evenement,
+        dateEvenement: event.date_evenement,
+        lieu: event.lieu,
+        nombreParticipantsMax: event.nombre_participants_max,
+        nombreParticipants: parseInt(event.nombre_participants),
+        userParticipates: event.user_participates === 1,
+        createdAt: event.created_at
+      }))
+    });
+  } catch (error) {
+    console.error('Erreur lors de la récupération des événements:', error);
+    res.status(500).json({
+      error: 'Erreur serveur',
+      message: 'Une erreur est survenue lors de la récupération des événements'
+    });
+  }
+};
+
+/**
+ * Participe à un événement
+ */
+const joinEvent = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const userId = req.user.id;
+
+    // Vérifier que l'événement existe et récupérer ses détails
+    const [events] = await pool.execute(`
+      SELECT 
+        e.id,
+        e.groupe_id,
+        e.nombre_participants_max,
+        COUNT(DISTINCT ep.user_id) as nombre_participants
+      FROM groupe_evenements e
+      LEFT JOIN evenement_participants ep ON e.id = ep.evenement_id
+      WHERE e.id = ?
+      GROUP BY e.id, e.groupe_id, e.nombre_participants_max
+    `, [eventId]);
+
+    if (events.length === 0) {
+      return res.status(404).json({
+        error: 'Événement non trouvé'
+      });
+    }
+
+    const event = events[0];
+
+    // Vérifier que l'utilisateur est membre du groupe
+    const [membres] = await pool.execute(
+      'SELECT role FROM groupe_membres WHERE groupe_id = ? AND user_id = ?',
+      [event.groupe_id, userId]
+    );
+
+    if (membres.length === 0) {
+      return res.status(403).json({
+        error: 'Accès refusé',
+        message: 'Vous devez être membre du groupe pour participer à l\'événement'
+      });
+    }
+
+    // Vérifier si la limite de participants est atteinte
+    if (event.nombre_participants_max && parseInt(event.nombre_participants) >= event.nombre_participants_max) {
+      return res.status(400).json({
+        error: 'Limite atteinte',
+        message: 'Le nombre maximum de participants est atteint'
+      });
+    }
+
+    // Vérifier si l'utilisateur participe déjà
+    const [existing] = await pool.execute(
+      'SELECT id FROM evenement_participants WHERE evenement_id = ? AND user_id = ?',
+      [eventId, userId]
+    );
+
+    if (existing.length > 0) {
+      return res.status(400).json({
+        error: 'Déjà inscrit',
+        message: 'Vous participez déjà à cet événement'
+      });
+    }
+
+    // Ajouter le participant
+    await pool.execute(
+      'INSERT INTO evenement_participants (evenement_id, user_id) VALUES (?, ?)',
+      [eventId, userId]
+    );
+
+    res.json({
+      message: 'Participation enregistrée avec succès'
+    });
+  } catch (error) {
+    console.error('Erreur lors de la participation à l\'événement:', error);
+    res.status(500).json({
+      error: 'Erreur serveur',
+      message: 'Une erreur est survenue'
+    });
+  }
+};
+
+/**
+ * Se désinscrire d'un événement
+ */
+const leaveEvent = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const userId = req.user.id;
+
+    // Vérifier que l'événement existe
+    const [events] = await pool.execute('SELECT id FROM groupe_evenements WHERE id = ?', [eventId]);
+
+    if (events.length === 0) {
+      return res.status(404).json({
+        error: 'Événement non trouvé'
+      });
+    }
+
+    // Vérifier que l'utilisateur participe à l'événement
+    const [participants] = await pool.execute(
+      'SELECT id FROM evenement_participants WHERE evenement_id = ? AND user_id = ?',
+      [eventId, userId]
+    );
+
+    if (participants.length === 0) {
+      return res.status(400).json({
+        error: 'Non inscrit',
+        message: 'Vous ne participez pas à cet événement'
+      });
+    }
+
+    // Retirer le participant
+    await pool.execute(
+      'DELETE FROM evenement_participants WHERE evenement_id = ? AND user_id = ?',
+      [eventId, userId]
+    );
+
+    res.json({
+      message: 'Désinscription réussie'
+    });
+  } catch (error) {
+    console.error('Erreur lors de la désinscription:', error);
+    res.status(500).json({
+      error: 'Erreur serveur',
+      message: 'Une erreur est survenue'
+    });
+  }
+};
+
+/**
+ * Supprime un événement
+ */
+const deleteEvent = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const userId = req.user.id;
+
+    // Vérifier que l'événement existe et récupérer ses détails
+    const [events] = await pool.execute(`
+      SELECT 
+        e.id,
+        e.groupe_id,
+        e.createur_id,
+        gm.role as user_role
+      FROM groupe_evenements e
+      LEFT JOIN groupe_membres gm ON e.groupe_id = gm.groupe_id AND gm.user_id = ?
+      WHERE e.id = ?
+    `, [userId, eventId]);
+
+    if (events.length === 0) {
+      return res.status(404).json({
+        error: 'Événement non trouvé'
+      });
+    }
+
+    const event = events[0];
+
+    // Vérifier que l'utilisateur est le créateur ou un admin/moderateur
+    if (event.createur_id !== userId && event.user_role !== 'admin' && event.user_role !== 'moderateur') {
+      return res.status(403).json({
+        error: 'Accès refusé',
+        message: 'Vous n\'avez pas les droits pour supprimer cet événement'
+      });
+    }
+
+    // Supprimer l'événement (les participants seront supprimés automatiquement via CASCADE)
+    await pool.execute('DELETE FROM groupe_evenements WHERE id = ?', [eventId]);
+
+    res.json({
+      message: 'Événement supprimé avec succès'
+    });
+  } catch (error) {
+    console.error('Erreur lors de la suppression de l\'événement:', error);
+    res.status(500).json({
+      error: 'Erreur serveur',
+      message: 'Une erreur est survenue'
+    });
+  }
+};
+
 module.exports = {
   getGroups,
   getGroupDetails,
@@ -791,6 +1214,11 @@ module.exports = {
   addFilmToGroup,
   getGroupInvitations,
   acceptGroupInvitation,
-  rejectGroupInvitation
+  rejectGroupInvitation,
+  createEvent,
+  getGroupEvents,
+  joinEvent,
+  leaveEvent,
+  deleteEvent
 };
 
