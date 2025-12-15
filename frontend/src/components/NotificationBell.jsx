@@ -215,3 +215,4 @@ function NotificationBell({ onGroupAccepted }) {
 
 export default NotificationBell;
 
+

@@ -14,3 +14,4 @@ export const markNotificationAsRead = async (notificationId) => {
   return response.data;
 };
 
+
