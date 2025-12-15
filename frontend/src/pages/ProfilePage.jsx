@@ -361,7 +361,7 @@ function ProfilePage() {
                               <p className="result-year">{new Date(film.dateSortie).getFullYear()}</p>
                             )}
                             {film.noteMoyenne > 0 && (
-                              <p className="result-rating">⭐ {film.noteMoyenne.toFixed(1)}/10</p>
+                              <p className="result-rating">⭐ {film.noteMoyenne.toFixed(1)}/5</p>
                             )}
                           </div>
                           <button 
@@ -434,6 +434,7 @@ function ProfilePage() {
                           <h4>{review.film.titre}</h4>
                           <div className="review-rating">
                             <StarRating value={review.note} readonly={true} maxStars={5} />
+                            <span className="rating-value">{review.note}/5</span>
                           </div>
                         </div>
                       </div>

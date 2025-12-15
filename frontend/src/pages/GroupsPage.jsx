@@ -21,14 +21,9 @@ function GroupsPage() {
   });
   const [error, setError] = useState('');
   const [inviteGroupId, setInviteGroupId] = useState(null);
-  const [inviteEmail, setInviteEmail] = useState('');
   const [inviteError, setInviteError] = useState('');
   const [inviteSuccess, setInviteSuccess] = useState('');
   const [inviting, setInviting] = useState(false);
-  const [friends, setFriends] = useState([]);
-  const [loadingFriends, setLoadingFriends] = useState(false);
-  const [selectedFriendId, setSelectedFriendId] = useState('');
-  const [friendsLoaded, setFriendsLoaded] = useState(false);
   const [friends, setFriends] = useState([]);
   const [loadingFriends, setLoadingFriends] = useState(false);
   const [selectedFriendId, setSelectedFriendId] = useState('');
@@ -72,23 +67,9 @@ function GroupsPage() {
     }
   };
 
-  const loadFriends = async () => {
-    setLoadingFriends(true);
-    try {
-      const data = await getFriends();
-      setFriends(data.friends || []);
-      setFriendsLoaded(true);
-    } catch (err) {
-      console.error('Erreur lors du chargement des amis:', err);
-    } finally {
-      setLoadingFriends(false);
-    }
-  };
-
   const handleOpenInvite = (e, groupId) => {
     e.stopPropagation();
     setInviteGroupId(groupId === inviteGroupId ? null : groupId);
-    setInviteEmail('');
     setInviteError('');
     setInviteSuccess('');
     setSelectedFriendId('');
@@ -113,11 +94,18 @@ function GroupsPage() {
     try {
       setInviting(true);
       await inviteToGroup(groupId, friendId);
-      setInviteSuccess('Invitation envoyée ✅');
-      setInviteEmail('');
+      setInviteSuccess('L\'invitation est bien partie !');
       setSelectedFriendId('');
     } catch (err) {
-      setInviteError(err.response?.data?.message || err.response?.data?.error || 'Erreur lors de l\'invitation');
+      const errorCode = err.response?.data?.error || '';
+      const errorMessage = err.response?.data?.message || err.response?.data?.error || 'Erreur lors de l\'invitation';
+      
+      // Si l'utilisateur est déjà invité, afficher le message spécifique
+      if (err.response?.status === 409 && (errorCode === 'Déjà invité' || errorMessage.includes('invitation'))) {
+        setInviteError('Déjà invité');
+      } else {
+        setInviteError(errorMessage);
+      }
     } finally {
       setInviting(false);
     }

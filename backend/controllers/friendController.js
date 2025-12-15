@@ -214,11 +214,28 @@ const sendFriendRequest = async (req, res) => {
       }
     }
 
+    // Récupérer les informations du demandeur pour la notification
+    const [requesterInfo] = await pool.execute(
+      'SELECT pseudo FROM users WHERE id = ?',
+      [requesterId]
+    );
+    const requesterPseudo = requesterInfo.length > 0 ? requesterInfo[0].pseudo : 'quelqu\'un';
+
     // Créer la demande d'ami
     await pool.execute(`
       INSERT INTO friend_requests (requester_id, receiver_id, status)
       VALUES (?, ?, 'pending')
     `, [requesterId, userId]);
+
+    // Émettre un événement WebSocket pour notifier l'utilisateur qui reçoit la demande
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user-${userId}`).emit('new-notification', {
+        type: 'friend-request',
+        requesterId: requesterId,
+        requesterPseudo: requesterPseudo
+      });
+    }
 
     res.status(201).json({
       message: 'Demande d\'ami envoyée avec succès'

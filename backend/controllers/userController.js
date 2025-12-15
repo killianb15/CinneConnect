@@ -314,7 +314,28 @@ const getUserGroups = async (req, res) => {
 const addFavoriteFilm = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { filmId } = req.params;
+    let { filmId } = req.params;
+
+    // Si filmId ressemble à un tmdbId (grand nombre), essayer de créer le film depuis TMDB
+    if (!isNaN(filmId) && parseInt(filmId) > 1000) {
+      // Vérifier d'abord s'il existe déjà en base avec ce tmdb_id
+      const [existingByTmdb] = await pool.execute('SELECT id FROM films WHERE tmdb_id = ?', [filmId]);
+      if (existingByTmdb.length > 0) {
+        filmId = existingByTmdb[0].id;
+      } else {
+        // Essayer de créer le film depuis TMDB
+        const movieController = require('./movieController');
+        const createdFilmId = await movieController.createFilmFromPublicData(filmId);
+        if (createdFilmId) {
+          filmId = createdFilmId;
+        } else {
+          return res.status(404).json({
+            error: 'Film non trouvé',
+            message: 'Impossible de créer le film depuis TMDB'
+          });
+        }
+      }
+    }
 
     // Vérifier que le film existe
     const [films] = await pool.execute('SELECT id FROM films WHERE id = ?', [filmId]);

@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { getNotifications, markNotificationAsRead } from '../services/notificationService';
 import { getFriendRequests, acceptFriendRequest, rejectFriendRequest } from '../services/friendService';
 import { getGroupInvitations, acceptGroupInvitation, rejectGroupInvitation } from '../services/groupService';
+import useNotifications from '../hooks/useNotifications';
 import './NotificationBell.css';
 
 function NotificationBell({ onGroupAccepted }) {
@@ -12,10 +13,15 @@ function NotificationBell({ onGroupAccepted }) {
   const [groupInvites, setGroupInvites] = useState([]);
   const [error, setError] = useState('');
   const [processing, setProcessing] = useState(false);
+  
+  // Utiliser le hook pour les notifications en temps réel
+  const { hasNewNotifications, refreshNotifications } = useNotifications();
 
-  const unreadCount = groupInvites.length + friendRequests.length + (notifications?.filter(n => !n.isLu).length || 0);
+  // Compter uniquement les notifications non lues (en excluant les invitations_groupe qui sont déjà comptées dans groupInvites)
+  const otherNotificationsUnread = notifications?.filter(n => !n.isLu && n.type !== 'invitation_groupe').length || 0;
+  const unreadCount = groupInvites.length + friendRequests.length + otherNotificationsUnread;
 
-  const loadAll = async () => {
+  const loadAll = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
@@ -33,7 +39,7 @@ function NotificationBell({ onGroupAccepted }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   const handleAcceptFriend = async (userId) => {
     try {
@@ -88,11 +94,30 @@ function NotificationBell({ onGroupAccepted }) {
     }
   };
 
+  // Charger les notifications au montage
+  useEffect(() => {
+    loadAll();
+  }, [loadAll]);
+
+  // Écouter les événements de notification pour recharger automatiquement
+  useEffect(() => {
+    const handleNotificationUpdate = () => {
+      loadAll();
+    };
+
+    window.addEventListener('notification-updated', handleNotificationUpdate);
+
+    return () => {
+      window.removeEventListener('notification-updated', handleNotificationUpdate);
+    };
+  }, [loadAll]);
+
   const handleOpen = () => {
     const next = !open;
     setOpen(next);
     if (next && !loading) {
       loadAll();
+      refreshNotifications();
     }
   };
 
@@ -192,19 +217,21 @@ function NotificationBell({ onGroupAccepted }) {
             {(!notifications || notifications.length === 0) ? (
               <div className="notif-empty">Rien à afficher</div>
             ) : (
-              notifications.map((notif) => (
-                <div key={notif.id} className={`notif-item ${notif.isLu ? 'read' : ''}`}>
-                  <div>
-                    <div className="notif-title">{notif.titre}</div>
-                    {notif.message && <div className="notif-sub">{notif.message}</div>}
+              notifications
+                .filter(notif => notif.type !== 'invitation_groupe') // Exclure les invitations de groupe car elles sont déjà dans la section dédiée
+                .map((notif) => (
+                  <div key={notif.id} className={`notif-item ${notif.isLu ? 'read' : ''}`}>
+                    <div>
+                      <div className="notif-title">{notif.titre}</div>
+                      {notif.message && <div className="notif-sub">{notif.message}</div>}
+                    </div>
+                    {!notif.isLu && (
+                      <button className="notif-mark" onClick={() => handleMarkRead(notif.id)}>
+                        Marquer lu
+                      </button>
+                    )}
                   </div>
-                  {!notif.isLu && (
-                    <button className="notif-mark" onClick={() => handleMarkRead(notif.id)}>
-                      Marquer lu
-                    </button>
-                  )}
-                </div>
-              ))
+                ))
             )}
           </div>
         </div>

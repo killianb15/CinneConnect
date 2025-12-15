@@ -198,6 +198,23 @@ async function initializeDatabase() {
         CONSTRAINT chk_invitation_statut CHECK (statut IN ('en_attente', 'acceptee', 'refusee'))
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
+    
+    // Ajouter la contrainte unique si elle n'existe pas déjà (pour les migrations)
+    // Note: On ne bloque que les invitations en_attente en double via le code
+    try {
+      // Créer un index unique uniquement pour les invitations en_attente (non supporté directement en MySQL)
+      // On utilisera plutôt une vérification dans le code
+      await connection.execute(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_pending_invitation 
+        ON groupe_invitations (groupe_id, invite_id) 
+        WHERE statut = 'en_attente'
+      `);
+    } catch (error) {
+      // MySQL ne supporte pas les index partiels, on utilisera la vérification dans le code
+      if (error.code !== 'ER_UNSUPPORTED_EXTENSION' && error.code !== 'ER_DUP_KEYNAME' && error.errno !== 1061) {
+        console.warn('Note: Les index partiels ne sont pas supportés par MySQL, on utilise la vérification dans le code');
+      }
+    }
 
     // Table des films dans les groupes
     await connection.execute(`

@@ -274,10 +274,15 @@ function SearchMoviesPage() {
             </div>
             <div className="films-grid">
               {films.map(film => (
-                <div key={film.id || film.tmdbId} className="film-card" onClick={() => {
+                <div key={film.id || film.tmdbId} className="film-card" onClick={async () => {
                   if (film.id) {
                     navigate(`/films/${film.id}`);
+                  } else if (film.tmdbId) {
+                    // Si pas d'ID local mais un tmdbId, sélectionner pour créer la review
+                    // Le film sera automatiquement créé lors de la soumission de la review
+                    handleFilmSelect(film);
                   } else {
+                    // Fallback pour les films sans ID ni tmdbId
                     handleFilmSelect(film);
                   }
                 }}>
@@ -294,7 +299,7 @@ function SearchMoviesPage() {
                     )}
                     {film.noteMoyenne > 0 && (
                       <div className="film-rating">
-                        ⭐ {film.noteMoyenne.toFixed(1)}/10
+                        ⭐ {film.noteMoyenne.toFixed(1)}/5
                       </div>
                     )}
                     {film.nombreReviews > 0 && (

@@ -146,11 +146,21 @@ function GroupDetailsPage() {
       }
 
       await inviteToGroup(groupId, friendId);
+      // Message de succès
+      alert('L\'invitation est bien partie !');
       setInviteEmail('');
       setSelectedFriendId('');
       setShowInviteForm(false);
     } catch (err) {
-      setError(err.response?.data?.error || 'Erreur');
+      const errorCode = err.response?.data?.error || '';
+      const errorMessage = err.response?.data?.message || err.response?.data?.error || 'Erreur';
+      
+      // Si l'utilisateur est déjà invité, afficher le message spécifique
+      if (err.response?.status === 409 && (errorCode === 'Déjà invité' || errorMessage.includes('invitation'))) {
+        alert('Déjà invité');
+      } else {
+        setError(errorMessage);
+      }
     }
   };
 

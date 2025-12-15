@@ -181,6 +181,12 @@ io.use((socket, next) => {
 io.on('connection', (socket) => {
   console.log(`✅ Client connecté: ${socket.id} (User ID: ${socket.userId})`);
 
+  // Rejoindre la room de l'utilisateur pour les notifications
+  if (socket.userId) {
+    socket.join(`user-${socket.userId}`);
+    console.log(`🔔 Client ${socket.id} a rejoint la room de notifications pour l'utilisateur ${socket.userId}`);
+  }
+
   // Rejoindre une room pour un groupe spécifique
   socket.on('join-group', (groupId) => {
     socket.join(`group-${groupId}`);

@@ -307,6 +307,7 @@ function FilmDetailsPage() {
                   {review.note && (
                     <div className="review-rating">
                       <StarRating value={review.note} readonly={true} maxStars={5} />
+                      <span className="rating-value">{review.note}/5</span>
                     </div>
                   )}
                   {review.commentaire && (

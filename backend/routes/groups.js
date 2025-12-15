@@ -55,6 +55,11 @@ router.get('/', authenticateToken, groupController.getGroups);
  */
 router.post('/', authenticateToken, groupController.createGroup);
 
+// Invitations - DOIT être avant les routes avec :groupId pour éviter les conflits
+router.get('/invitations', authenticateToken, groupController.getGroupInvitations);
+router.post('/invitations/:invitationId/accept', authenticateToken, groupController.acceptGroupInvitation);
+router.post('/invitations/:invitationId/reject', authenticateToken, groupController.rejectGroupInvitation);
+
 /**
  * @swagger
  * /api/groups/{groupId}/messages:
@@ -205,11 +210,6 @@ router.post('/:groupId/join', authenticateToken, groupController.joinGroup);
  *         description: Groupe quitté
  */
 router.post('/:groupId/leave', authenticateToken, groupController.leaveGroup);
-
-// Invitations
-router.get('/invitations', authenticateToken, groupController.getGroupInvitations);
-router.post('/invitations/:invitationId/accept', authenticateToken, groupController.acceptGroupInvitation);
-router.post('/invitations/:invitationId/reject', authenticateToken, groupController.rejectGroupInvitation);
 
 /**
  * @swagger

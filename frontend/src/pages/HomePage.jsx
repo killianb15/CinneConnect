@@ -151,20 +151,15 @@ function HomePage() {
             </div>
           </div>
 
-          <div className="feed-header-section">
-            <h2>📰 Fil d'Actualité - Vos amis</h2>
-            <Link to="/parcourir-profils" className="browse-profiles-btn">
-              👥 Parcourir les profils
-            </Link>
-          </div>
-
           {/* Films les mieux notés */}
-          {topRatedFilms.length > 0 && (
-            <div className="featured-films-section">
-              <h3>⭐ Films les mieux notés</h3>
+          <div className="featured-films-section">
+            <h3>⭐ Films les mieux notés</h3>
+            {loadingFeed ? (
+              <div className="loading">Les films chargent...</div>
+            ) : topRatedFilms.length > 0 ? (
               <div className="featured-films-grid">
                 {topRatedFilms.map(film => (
-                  <Link key={film.id} to={`/films/${film.id}`} className="featured-film-card">
+                  <Link key={film.id || film.tmdbId} to={`/films/${film.id || film.tmdbId}`} className="featured-film-card">
                     {film.afficheUrl && (
                       <img src={film.afficheUrl} alt={film.titre} className="featured-film-poster" />
                     )}
@@ -175,22 +170,26 @@ function HomePage() {
                       )}
                       <div className="featured-film-rating">
                         <StarRating value={Math.round(film.noteMoyenne)} readonly={true} maxStars={5} />
-                        <span className="rating-value">{film.noteMoyenne.toFixed(1)}</span>
+                        <span className="rating-value">{film.noteMoyenne.toFixed(1)}/5</span>
                       </div>
                     </div>
                   </Link>
                 ))}
               </div>
-            </div>
-          )}
+            ) : (
+              <div className="empty-state">Aucun film disponible</div>
+            )}
+          </div>
 
           {/* Films les plus récents */}
-          {recentFilms.length > 0 && (
-            <div className="featured-films-section">
-              <h3>🆕 Films les plus récents</h3>
+          <div className="featured-films-section">
+            <h3>🆕 Films les plus récents</h3>
+            {loadingFeed ? (
+              <div className="loading">Les films chargent...</div>
+            ) : recentFilms.length > 0 ? (
               <div className="featured-films-grid">
                 {recentFilms.map(film => (
-                  <Link key={film.id} to={`/films/${film.id}`} className="featured-film-card">
+                  <Link key={film.id || film.tmdbId} to={`/films/${film.id || film.tmdbId}`} className="featured-film-card">
                     {film.afficheUrl && (
                       <img src={film.afficheUrl} alt={film.titre} className="featured-film-poster" />
                     )}
@@ -202,15 +201,17 @@ function HomePage() {
                       {film.noteMoyenne > 0 && (
                         <div className="featured-film-rating">
                           <StarRating value={Math.round(film.noteMoyenne)} readonly={true} maxStars={5} />
-                          <span className="rating-value">{film.noteMoyenne.toFixed(1)}</span>
+                          <span className="rating-value">{film.noteMoyenne.toFixed(1)}/5</span>
                         </div>
                       )}
                     </div>
                   </Link>
                 ))}
               </div>
-            </div>
-          )}
+            ) : (
+              <div className="empty-state">Aucun film disponible</div>
+            )}
+          </div>
 
           {/* Section des demandes d'amis */}
           {friendRequests.length > 0 && (
@@ -251,6 +252,14 @@ function HomePage() {
               </div>
             </div>
           )}
+
+          {/* Fil d'Actualité */}
+          <div className="feed-header-section">
+            <h2>📰 Fil d'Actualité - Vos amis</h2>
+            <Link to="/parcourir-profils" className="browse-profiles-btn">
+              👥 Parcourir les profils
+            </Link>
+          </div>
           
           {loadingFeed ? (
             <div className="loading">Chargement du fil d'actualité...</div>
@@ -298,6 +307,7 @@ function HomePage() {
                       <div className="feed-rating">
                         <span className="rating-label">Note:</span>
                         <StarRating value={item.review.note} readonly={true} maxStars={5} />
+                        <span className="rating-value">{item.review.note}/5</span>
                       </div>
                     )}
                     
@@ -351,7 +361,7 @@ function HomePage() {
                     )}
                     <div className="featured-film-rating">
                       <StarRating value={Math.round(film.noteMoyenne)} readonly={true} maxStars={5} />
-                      <span className="rating-value">{film.noteMoyenne.toFixed(1)}</span>
+                      <span className="rating-value">{film.noteMoyenne.toFixed(1)}/5</span>
                     </div>
                   </div>
                 </Link>
@@ -378,7 +388,7 @@ function HomePage() {
                     {film.noteMoyenne > 0 && (
                       <div className="featured-film-rating">
                         <StarRating value={Math.round(film.noteMoyenne)} readonly={true} maxStars={5} />
-                        <span className="rating-value">{film.noteMoyenne.toFixed(1)}</span>
+                        <span className="rating-value">{film.noteMoyenne.toFixed(1)}/5</span>
                       </div>
                     )}
                   </div>
@@ -437,6 +447,7 @@ function HomePage() {
                       <div className="feed-rating">
                         <span className="rating-label">Note:</span>
                         <StarRating value={item.review.note} readonly={true} maxStars={5} />
+                        <span className="rating-value">{item.review.note}/5</span>
                       </div>
                     )}
                     
@@ -473,7 +484,7 @@ function HomePage() {
                     )}
                     {film.noteUtilisateurs > 0 && (
                       <p className="movie-rating">
-                        ⭐ {film.noteUtilisateurs.toFixed(1)} ({film.nombreReviews} avis)
+                        ⭐ {film.noteUtilisateurs.toFixed(1)}/5 ({film.nombreReviews} avis)
                       </p>
                     )}
                   </div>

@@ -507,18 +507,64 @@ const inviteToGroup = async (req, res) => {
       });
     }
 
-    // Créer l'invitation
-    await pool.execute(
-      'INSERT INTO groupe_invitations (groupe_id, inviteur_id, invite_id, statut) VALUES (?, ?, ?, ?)',
-      [groupId, userId, inviteId, 'en_attente']
+    // Vérifier si une invitation existe déjà pour ce groupe et cet utilisateur
+    const [existingInvitation] = await pool.execute(
+      'SELECT id, statut FROM groupe_invitations WHERE groupe_id = ? AND invite_id = ?',
+      [groupId, inviteId]
     );
 
-    // Créer une notification
-    await pool.execute(
-      `INSERT INTO notifications (user_id, type, titre, message, lien)
-       VALUES (?, 'invitation_groupe', 'Invitation à un groupe', ?, ?)`,
-      [inviteId, `Vous avez été invité à rejoindre un groupe`, `/groupes/${groupId}`]
+    // Récupérer les informations du groupe et de l'inviteur pour la notification
+    const [groupeInfo] = await pool.execute(
+      'SELECT titre FROM groupes WHERE id = ?',
+      [groupId]
     );
+
+    const [inviteurInfo] = await pool.execute(
+      'SELECT pseudo FROM users WHERE id = ?',
+      [userId]
+    );
+
+    const groupeTitre = groupeInfo.length > 0 ? groupeInfo[0].titre : 'un groupe';
+    const inviteurPseudo = inviteurInfo.length > 0 ? inviteurInfo[0].pseudo : 'quelqu\'un';
+
+    if (existingInvitation.length > 0) {
+      const existingInv = existingInvitation[0];
+      if (existingInv.statut === 'en_attente') {
+        return res.status(409).json({
+          error: 'Déjà invité',
+          message: 'Cet utilisateur a déjà une invitation en attente pour ce groupe'
+        });
+      } else {
+        // Si l'invitation a été acceptée/refusée, mettre à jour pour créer une nouvelle invitation en_attente
+        await pool.execute(
+          'UPDATE groupe_invitations SET statut = ?, inviteur_id = ?, created_at = CURRENT_TIMESTAMP WHERE id = ?',
+          ['en_attente', userId, existingInv.id]
+        );
+      }
+    } else {
+      // Créer une nouvelle invitation
+      await pool.execute(
+        'INSERT INTO groupe_invitations (groupe_id, inviteur_id, invite_id, statut) VALUES (?, ?, ?, ?)',
+        [groupId, userId, inviteId, 'en_attente']
+      );
+    }
+
+    // Ne pas créer de notification dans la table notifications car l'invitation est déjà gérée
+    // via la table groupe_invitations qui est affichée dans la section dédiée
+    
+    // Émettre un événement WebSocket pour notifier l'utilisateur invité
+    const io = req.app.get('io');
+    if (io) {
+      console.log(`📤 Émission WebSocket vers user-${inviteId} pour notification d'invitation`);
+      io.to(`user-${inviteId}`).emit('new-notification', {
+        type: 'group-invitation',
+        groupId: groupId,
+        groupTitle: groupeTitre,
+        inviterPseudo: inviteurPseudo
+      });
+    } else {
+      console.warn('⚠️ WebSocket io non disponible pour l\'émission de notification');
+    }
 
     res.json({
       message: 'Invitation envoyée avec succès'

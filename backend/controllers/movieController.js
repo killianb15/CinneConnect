@@ -4,9 +4,7 @@
 
 const { pool } = require('../config/database');
 const movieService = require('../services/movieService');
-
-// Exposer getPublicMovies pour la recherche
-const { getPublicMovies } = movieService;
+const { getMovieFromTMDB, searchMoviesOnTMDB } = movieService;
 
 /**
  * Parse une valeur JSON de manière sécurisée
@@ -38,88 +36,55 @@ function parseJSON(value, defaultValue = null) {
 }
 
 /**
- * Crée un film dans la DB depuis les données publiques
+ * Crée un film dans la DB depuis l'API TMDB
  */
 const createFilmFromPublicData = async (tmdbId) => {
-  const publicMovies = getPublicMovies();
-  const publicFilm = publicMovies.find(f => f.tmdbId === parseInt(tmdbId));
-  
-  if (!publicFilm) {
-    return null;
-  }
-
   try {
+    // Vérifier d'abord si le film existe déjà en base
+    const [existingFilms] = await pool.execute('SELECT id FROM films WHERE tmdb_id = ?', [tmdbId]);
+    if (existingFilms.length > 0) {
+      return existingFilms[0].id;
+    }
+
+    // Récupérer le film depuis TMDB
+    const tmdbFilm = await getMovieFromTMDB(tmdbId);
+    if (!tmdbFilm) {
+      return null;
+    }
+
+    // Insérer le film en base
     const [result] = await pool.execute(
       `INSERT INTO films (tmdb_id, titre, titre_original, synopsis, date_sortie, duree, affiche_url, note_moyenne, nombre_votes, genres, realisateur, casting)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE
-       titre = VALUES(titre),
-       synopsis = VALUES(synopsis),
-       affiche_url = VALUES(affiche_url)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        publicFilm.tmdbId,
-        publicFilm.titre,
-        publicFilm.titreOriginal,
-        publicFilm.synopsis,
-        publicFilm.dateSortie,
-        publicFilm.duree,
-        publicFilm.afficheUrl,
-        publicFilm.noteMoyenne,
-        publicFilm.nombreVotes,
-        JSON.stringify(publicFilm.genres || []),
-        publicFilm.realisateur,
-        JSON.stringify(publicFilm.casting || [])
+        tmdbFilm.tmdbId,
+        tmdbFilm.titre,
+        tmdbFilm.titreOriginal,
+        tmdbFilm.synopsis,
+        tmdbFilm.dateSortie,
+        tmdbFilm.duree,
+        tmdbFilm.afficheUrl,
+        tmdbFilm.noteMoyenne,
+        tmdbFilm.nombreVotes,
+        JSON.stringify(tmdbFilm.genres || []),
+        tmdbFilm.realisateur,
+        JSON.stringify(tmdbFilm.casting || [])
       ]
     );
 
-    // Récupérer l'ID du film créé ou existant
-    const [films] = await pool.execute('SELECT id FROM films WHERE tmdb_id = ?', [tmdbId]);
-    return films[0]?.id || result.insertId;
+    return result.insertId;
   } catch (error) {
-    console.error('Erreur lors de la création du film:', error);
+    console.error('Erreur lors de la création du film depuis TMDB:', error);
     return null;
   }
 };
 
 /**
- * Récupère les derniers films (depuis TMDB ou la DB)
+ * Récupère les derniers films depuis la DB (pas de chargement automatique)
  */
 const getLatestMovies = async (req, res) => {
   try {
-    // Récupérer depuis l'API publique de films
-    const tmdbMovies = await movieService.getLatestMovies(1);
-    
-    // Sauvegarder dans la DB si pas déjà présent
-    for (const movie of tmdbMovies) {
-      try {
-        await pool.execute(
-          `INSERT INTO films (tmdb_id, titre, titre_original, synopsis, date_sortie, affiche_url, note_moyenne, nombre_votes, genres)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-           ON DUPLICATE KEY UPDATE
-           titre = VALUES(titre),
-           synopsis = VALUES(synopsis),
-           affiche_url = VALUES(affiche_url),
-           note_moyenne = VALUES(note_moyenne),
-           nombre_votes = VALUES(nombre_votes)`,
-          [
-            movie.tmdbId,
-            movie.titre,
-            movie.titreOriginal,
-            movie.synopsis,
-            movie.dateSortie,
-            movie.afficheUrl,
-            movie.noteMoyenne,
-            movie.nombreVotes,
-            JSON.stringify(movie.genres)
-          ]
-        );
-      } catch (err) {
-        // Ignorer les erreurs de duplication
-        console.log('Film déjà en base:', movie.titre);
-      }
-    }
-
-    // Récupérer depuis la DB pour avoir les IDs locaux
+    // Récupérer uniquement depuis la DB (films déjà ajoutés)
     const [films] = await pool.execute(`
       SELECT 
         f.id,
@@ -176,12 +141,55 @@ const getLatestMovies = async (req, res) => {
  */
 const getMovieDetails = async (req, res) => {
   try {
-    const { id } = req.params;
+    let { id } = req.params;
+    let filmId = id;
 
+    // Vérifier d'abord si c'est un ID local ou un tmdbId
     const [films] = await pool.execute(
       'SELECT * FROM films WHERE id = ? OR tmdb_id = ?',
       [id, id]
     );
+
+    // Si pas trouvé et que c'est un nombre (tmdbId potentiel), essayer de le créer depuis TMDB
+    if (films.length === 0 && !isNaN(id) && parseInt(id) > 1000) {
+      const createdFilmId = await createFilmFromPublicData(parseInt(id));
+      if (createdFilmId) {
+        filmId = createdFilmId;
+        // Récupérer le film créé
+        const [createdFilms] = await pool.execute('SELECT * FROM films WHERE id = ?', [filmId]);
+        if (createdFilms.length > 0) {
+          const film = createdFilms[0];
+          
+          // Récupérer les reviews (vide pour un nouveau film)
+          const reviewsWithReplies = [];
+
+          res.json({
+            film: {
+              id: film.id,
+              tmdbId: film.tmdb_id,
+              titre: film.titre,
+              titreOriginal: film.titre_original,
+              synopsis: film.synopsis,
+              dateSortie: film.date_sortie,
+              duree: film.duree,
+              afficheUrl: film.affiche_url,
+              noteMoyenne: parseFloat(film.note_moyenne) || 0,
+              nombreVotes: film.nombre_votes || 0,
+              genres: parseJSON(film.genres) || [],
+              realisateur: film.realisateur,
+              casting: parseJSON(film.casting) || []
+            },
+            reviews: reviewsWithReplies
+          });
+          return;
+        }
+      }
+      
+      return res.status(404).json({
+        error: 'Film non trouvé',
+        message: 'Impossible de récupérer le film depuis TMDB'
+      });
+    }
 
     if (films.length === 0) {
       return res.status(404).json({
@@ -370,20 +378,7 @@ const searchMovies = async (req, res) => {
     const searchTerm = q.trim().toLowerCase();
     const searchTermSQL = `%${searchTerm}%`;
 
-    // Récupérer tous les films publics pour la recherche
-    const publicMovies = getPublicMovies();
-    
-    // Rechercher dans les films publics (insensible à la casse)
-    const filteredPublicMovies = publicMovies.filter(movie => {
-      const titreLower = (movie.titre || '').toLowerCase();
-      const titreOriginalLower = (movie.titreOriginal || '').toLowerCase();
-      return titreLower.includes(searchTerm) || titreOriginalLower.includes(searchTerm);
-    });
-
-    // Créer un Set des tmdbId trouvés pour éviter les doublons
-    const foundTmdbIds = new Set(filteredPublicMovies.map(m => m.tmdbId));
-
-    // Rechercher dans la base de données locale (films déjà sauvegardés)
+    // 1. Rechercher d'abord dans la base de données locale
     const [dbFilms] = await pool.execute(`
       SELECT 
         f.id,
@@ -408,6 +403,7 @@ const searchMovies = async (req, res) => {
       WHERE LOWER(f.titre) LIKE ? OR LOWER(f.titre_original) LIKE ?
       GROUP BY f.id, f.tmdb_id, f.titre, f.titre_original, f.synopsis, f.date_sortie, f.duree, f.affiche_url, f.note_moyenne, f.nombre_votes, f.genres, f.realisateur, f.casting, f.created_at, f.updated_at
       ORDER BY f.date_sortie DESC
+      LIMIT 20
     `, [searchTermSQL, searchTermSQL]);
 
     // Mapper les films de la DB
@@ -426,26 +422,38 @@ const searchMovies = async (req, res) => {
       genres: parseJSON(film.genres) || []
     }));
 
-    // Ajouter les films publics qui ne sont pas déjà dans la DB
-    const publicFilmsMapped = filteredPublicMovies
-      .filter(movie => !dbFilmsMapped.some(dbFilm => dbFilm.tmdbId === movie.tmdbId))
-      .map(movie => ({
-        id: null,
-        tmdbId: movie.tmdbId,
-        titre: movie.titre,
-        titreOriginal: movie.titreOriginal,
-        synopsis: movie.synopsis,
-        dateSortie: movie.dateSortie,
-        afficheUrl: movie.afficheUrl,
-        noteMoyenne: movie.noteMoyenne || 0,
-        noteUtilisateurs: 0,
-        nombreVotes: movie.nombreVotes || 0,
-        nombreReviews: 0,
-        genres: movie.genres || []
-      }));
+    // 2. Rechercher sur TMDB pour compléter les résultats
+    let tmdbResults = [];
+    try {
+      const tmdbMovies = await searchMoviesOnTMDB(q.trim(), 1);
+      
+      // Créer un Set des tmdbId déjà présents dans la DB
+      const dbTmdbIds = new Set(dbFilmsMapped.map(f => f.tmdbId));
+      
+      // Filtrer les résultats TMDB pour ne garder que ceux qui ne sont pas en DB
+      tmdbResults = tmdbMovies
+        .filter(movie => !dbTmdbIds.has(movie.tmdbId))
+        .map(movie => ({
+          id: null,
+          tmdbId: movie.tmdbId,
+          titre: movie.titre,
+          titreOriginal: movie.titreOriginal,
+          synopsis: movie.synopsis,
+          dateSortie: movie.dateSortie,
+          afficheUrl: movie.afficheUrl,
+          noteMoyenne: parseFloat(movie.noteMoyenne) || 0,
+          noteUtilisateurs: 0,
+          nombreVotes: movie.nombreVotes || 0,
+          nombreReviews: 0,
+          genres: movie.genres || []
+        }));
+    } catch (tmdbError) {
+      console.error('Erreur lors de la recherche TMDB:', tmdbError.message);
+      // Continuer même si TMDB échoue
+    }
 
-    // Combiner les résultats : DB d'abord, puis films publics
-    const allFilms = [...dbFilmsMapped, ...publicFilmsMapped].slice(0, 50);
+    // Combiner les résultats : DB d'abord, puis résultats TMDB
+    const allFilms = [...dbFilmsMapped, ...tmdbResults].slice(0, 50);
 
     res.json({ films: allFilms });
   } catch (error) {
