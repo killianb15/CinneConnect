@@ -163,6 +163,12 @@ const getMovieDetails = async (req, res) => {
           // Récupérer les reviews (vide pour un nouveau film)
           const reviewsWithReplies = [];
 
+          // S'assurer que la note est sur 5 pour les films de l'API
+          let noteMoyenne = parseFloat(film.note_moyenne) || 0;
+          if (noteMoyenne > 5) {
+            noteMoyenne = parseFloat((noteMoyenne / 2).toFixed(1));
+          }
+
           res.json({
             film: {
               id: film.id,
@@ -173,7 +179,7 @@ const getMovieDetails = async (req, res) => {
               dateSortie: film.date_sortie,
               duree: film.duree,
               afficheUrl: film.affiche_url,
-              noteMoyenne: parseFloat(film.note_moyenne) || 0,
+              noteMoyenne: noteMoyenne,
               nombreVotes: film.nombre_votes || 0,
               genres: parseJSON(film.genres) || [],
               realisateur: film.realisateur,
@@ -261,6 +267,13 @@ const getMovieDetails = async (req, res) => {
       };
     }));
 
+    // Si le film vient de l'API TMDB, s'assurer que la note est sur 5
+    let noteMoyenne = parseFloat(film.note_moyenne) || 0;
+    if (film.tmdb_id && noteMoyenne > 5) {
+      // Si la note est supérieure à 5, c'est qu'elle est sur 10, la diviser par 2
+      noteMoyenne = parseFloat((noteMoyenne / 2).toFixed(1));
+    }
+
     res.json({
       film: {
         id: film.id,
@@ -271,7 +284,7 @@ const getMovieDetails = async (req, res) => {
         dateSortie: film.date_sortie,
         duree: film.duree,
         afficheUrl: film.affiche_url,
-        noteMoyenne: parseFloat(film.note_moyenne),
+        noteMoyenne: noteMoyenne,
         nombreVotes: film.nombre_votes,
         genres: parseJSON(film.genres) || [],
         realisateur: film.realisateur,

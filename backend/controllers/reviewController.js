@@ -23,12 +23,19 @@ const createOrUpdateReview = async (req, res) => {
     const { note, commentaire, tmdbId } = req.body;
     const userId = req.user.id;
 
+    console.log('Review creation - filmId:', filmId, 'tmdbId from body:', tmdbId);
+
+    // Déterminer le tmdbId à utiliser (depuis le body ou potentiellement depuis filmId)
+    let tmdbIdToUse = tmdbId;
+    
     // Si pas d'ID local mais un tmdbId, créer le film depuis les données publiques
     if (!filmId || filmId === 'null' || filmId === 'undefined' || filmId === 'new') {
-      if (tmdbId) {
-        const createdFilmId = await movieController.createFilmFromPublicData(tmdbId);
+      if (tmdbIdToUse) {
+        console.log('Creating film from tmdbId:', tmdbIdToUse);
+        const createdFilmId = await movieController.createFilmFromPublicData(tmdbIdToUse);
         if (createdFilmId) {
           filmId = createdFilmId;
+          console.log('Film created with ID:', filmId);
         } else {
           return res.status(404).json({
             error: 'Film non trouvé',
@@ -43,12 +50,52 @@ const createOrUpdateReview = async (req, res) => {
       }
     }
 
-    // Vérifier que le film existe
-    const [films] = await pool.execute('SELECT id FROM films WHERE id = ?', [filmId]);
+    // Vérifier que le film existe par ID local
+    let [films] = await pool.execute('SELECT id, tmdb_id FROM films WHERE id = ?', [filmId]);
+    console.log('Films found by ID:', films.length);
+    
+    // Si le film n'existe pas par ID local, vérifier si c'est un tmdbId
     if (films.length === 0) {
-      return res.status(404).json({
-        error: 'Film non trouvé'
-      });
+      // Vérifier si le filmId pourrait être un tmdbId (chercher par tmdb_id)
+      const parsedFilmId = parseInt(filmId);
+      if (!isNaN(parsedFilmId) && parsedFilmId > 0) {
+        console.log('Checking if filmId is a tmdbId:', parsedFilmId);
+        [films] = await pool.execute('SELECT id, tmdb_id FROM films WHERE tmdb_id = ?', [parsedFilmId]);
+        if (films.length > 0) {
+          filmId = films[0].id;
+          console.log('Film found by tmdbId, using local ID:', filmId);
+        } else {
+          // Le filmId pourrait être un tmdbId, essayer de créer le film
+          if (!tmdbIdToUse) {
+            tmdbIdToUse = parsedFilmId;
+            console.log('Using filmId as tmdbId:', tmdbIdToUse);
+          }
+        }
+      }
+    }
+
+    // Si le film n'existe toujours pas, essayer de le créer depuis l'API
+    if (films.length === 0) {
+      if (tmdbIdToUse) {
+        console.log('Creating film from tmdbId (second attempt):', tmdbIdToUse);
+        const createdFilmId = await movieController.createFilmFromPublicData(tmdbIdToUse);
+        if (createdFilmId) {
+          filmId = createdFilmId;
+          console.log('Film created with ID:', filmId);
+        } else {
+          console.error('Failed to create film from tmdbId:', tmdbIdToUse);
+          return res.status(404).json({
+            error: 'Film non trouvé',
+            message: 'Impossible de créer le film depuis les données publiques'
+          });
+        }
+      } else {
+        console.error('No tmdbId available to create film. filmId:', filmId);
+        return res.status(404).json({
+          error: 'Film non trouvé',
+          message: 'Le film n\'existe pas en base de données. Veuillez fournir un tmdbId pour le créer depuis l\'API.'
+        });
+      }
     }
 
     // Vérifier si une review existe déjà

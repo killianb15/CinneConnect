@@ -91,7 +91,8 @@ function FilmDetailsPage() {
     try {
       await createOrUpdateReview(filmId, {
         note: reviewData.note,
-        commentaire: reviewData.commentaire
+        commentaire: reviewData.commentaire,
+        tmdbId: film?.tmdbId // Inclure le tmdbId si disponible pour créer le film si nécessaire
       });
       setReviewData({ note: 0, commentaire: '' });
       setShowReviewForm(false);
