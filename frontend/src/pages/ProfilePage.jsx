@@ -73,6 +73,8 @@ function ProfilePage() {
   }, [showAddFavorite]);
 
   const loadProfile = async () => {
+    setLoading(true);
+    setError('');
     try {
       const data = await getUserProfile(userId);
       setProfile(data);
@@ -83,8 +85,16 @@ function ProfilePage() {
         genresPreferences: data.user.genresPreferences || []
       });
     } catch (err) {
-      console.error('Erreur:', err);
-      setError('Erreur lors du chargement du profil');
+      console.error('Erreur lors du chargement du profil:', err);
+      let errorMessage = 'Erreur lors du chargement du profil';
+      
+      if (err.response?.status === 429) {
+        errorMessage = err.userMessage || err.response?.data?.message || 'Trop de requêtes. Veuillez patienter quelques instants avant de réessayer.';
+      } else {
+        errorMessage = err.response?.data?.error || err.response?.data?.message || err.message || errorMessage;
+      }
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -95,7 +105,9 @@ function ProfilePage() {
       const data = await getUserGroups(userId);
       setGroups(data.groupes || []);
     } catch (err) {
-      console.error('Erreur:', err);
+      console.error('Erreur lors du chargement des groupes:', err);
+      // Ne pas bloquer l'affichage du profil si les groupes ne peuvent pas être chargés
+      setGroups([]);
     }
   };
 
@@ -127,7 +139,15 @@ function ProfilePage() {
       setEditing(false);
       loadProfile();
     } catch (err) {
-      setError(err.response?.data?.error || 'Erreur lors de la mise à jour');
+      let errorMessage = 'Erreur lors de la mise à jour';
+      
+      if (err.response?.status === 429) {
+        errorMessage = err.userMessage || err.response?.data?.message || 'Trop de requêtes. Veuillez patienter quelques instants avant de réessayer.';
+      } else {
+        errorMessage = err.response?.data?.error || err.response?.data?.message || err.message || errorMessage;
+      }
+      
+      setError(errorMessage);
     }
   };
 
@@ -217,7 +237,18 @@ function ProfilePage() {
                 </button>
               )}
             </div>
-            {profile.user.bio && <p className="profile-bio">{profile.user.bio}</p>}
+            {profile.user.bio ? (
+              <p className="profile-bio">{profile.user.bio}</p>
+            ) : isOwnProfile ? (
+              <p className="profile-bio-empty">
+                Aucune biographie.{' '}
+                <button onClick={() => setEditing(true)} className="bio-link-button">
+                  Ajoutez-en une !
+                </button>
+              </p>
+            ) : (
+              <p className="profile-bio-empty">Aucune biographie disponible</p>
+            )}
             <div className="profile-follow-stats">
               <span className="follow-stat">
                 <strong>{profile.followersCount || 0}</strong> abonné{profile.followersCount !== 1 ? 's' : ''}
@@ -249,14 +280,18 @@ function ProfilePage() {
               />
             </div>
             <div className="form-group">
-              <label>Biographie</label>
+              <label>Biographie *</label>
               <textarea
                 name="bio"
                 value={formData.bio}
                 onChange={handleChange}
-                placeholder="Parlez-nous de vous..."
-                rows="4"
+                placeholder="Parlez-nous de vous, de vos goûts cinématographiques, de vos films préférés..."
+                rows="5"
+                maxLength="500"
               />
+              <small className="form-help-text">
+                {formData.bio.length}/500 caractères
+              </small>
             </div>
             <div className="form-group">
               <label>Photo (URL)</label>

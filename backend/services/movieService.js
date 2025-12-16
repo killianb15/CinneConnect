@@ -69,6 +69,11 @@ async function getMovieFromTMDB(tmdbId) {
     if (error.response?.status === 404) {
       return null;
     }
+    if (error.response?.status === 429) {
+      const rateLimitError = new Error('Trop de requêtes vers l\'API TMDB. Veuillez patienter quelques instants.');
+      rateLimitError.status = 429;
+      throw rateLimitError;
+    }
     throw error;
   }
 }
@@ -101,6 +106,11 @@ async function getTopRatedMoviesFromTMDB(page = 1) {
     }));
   } catch (error) {
     console.error('Erreur lors de la récupération des films mieux notés TMDB:', error.message);
+    if (error.response?.status === 429) {
+      const rateLimitError = new Error('Trop de requêtes vers l\'API TMDB. Veuillez patienter quelques instants.');
+      rateLimitError.status = 429;
+      throw rateLimitError;
+    }
     throw error;
   }
 }
@@ -166,6 +176,11 @@ async function getLatestMoviesFromTMDB(page = 1) {
     }));
   } catch (error) {
     console.error('Erreur lors de la récupération des films récents TMDB:', error.message);
+    if (error.response?.status === 429) {
+      const rateLimitError = new Error('Trop de requêtes vers l\'API TMDB. Veuillez patienter quelques instants.');
+      rateLimitError.status = 429;
+      throw rateLimitError;
+    }
     throw error;
   }
 }
@@ -200,6 +215,11 @@ async function searchMoviesOnTMDB(query, page = 1) {
     }));
   } catch (error) {
     console.error('Erreur lors de la recherche TMDB:', error.message);
+    if (error.response?.status === 429) {
+      const rateLimitError = new Error('Trop de requêtes vers l\'API TMDB. Veuillez patienter quelques instants.');
+      rateLimitError.status = 429;
+      throw rateLimitError;
+    }
     throw error;
   }
 }

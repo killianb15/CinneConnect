@@ -39,6 +39,14 @@ api.interceptors.response.use(
       if (window.location.pathname !== '/') {
         window.location.href = '/';
       }
+    } else if (error.response?.status === 429) {
+      // Trop de requêtes - Rate limiting
+      const retryAfter = error.response.headers['retry-after'];
+      const message = retryAfter 
+        ? `Trop de requêtes. Veuillez réessayer dans ${retryAfter} secondes.`
+        : 'Trop de requêtes. Veuillez patienter quelques instants avant de réessayer.';
+      error.message = message;
+      error.userMessage = message;
     }
     return Promise.reject(error);
   }
