@@ -1,95 +1,122 @@
 /**
  * Service d'authentification
- * Gère l'inscription, la connexion et la récupération de mot de passe
+ * Ici je centralise toutes les actions liées au login/register/logout et OAuth Google
  */
 
 import api from './api';
 
 /**
- * Inscription d'un nouvel utilisateur
- * @param {Object} userData - Données de l'utilisateur (email, password, pseudo)
- * @returns {Promise} Réponse de l'API avec le token et les données utilisateur
+ * Stocker token + user dans le localStorage
  */
-export const register = async (userData) => {
-  const response = await api.post('/auth/register', userData);
-  
-  // Sauvegarder le token et les données utilisateur
-  if (response.data.token) {
-    localStorage.setItem('token', response.data.token);
-    localStorage.setItem('user', JSON.stringify(response.data.user));
-  }
-  
-  return response.data;
-};
+function enregistrerSession(token, user) {
+    localStorage.setItem('token', token);
+    localStorage.setItem('user', JSON.stringify(user));
+}
 
 /**
- * Connexion d'un utilisateur
- * @param {Object} credentials - Identifiants (email, password)
- * @returns {Promise} Réponse de l'API avec le token et les données utilisateur
+ * Nettoyer la session
  */
-export const login = async (credentials) => {
-  const response = await api.post('/auth/login', credentials);
-  
-  // Sauvegarder le token et les données utilisateur
-  if (response.data.token) {
-    localStorage.setItem('token', response.data.token);
-    localStorage.setItem('user', JSON.stringify(response.data.user));
-  }
-  
-  return response.data;
-};
+function supprimerSession() {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+}
 
 /**
- * Déconnexion de l'utilisateur
- */
-export const logout = () => {
-  localStorage.removeItem('token');
-  localStorage.removeItem('user');
-};
-
-/**
- * Vérifie si l'utilisateur est connecté
- * @returns {boolean} True si un token existe
- */
-export const isAuthenticated = () => {
-  return !!localStorage.getItem('token');
-};
-
-/**
- * Récupère les données de l'utilisateur depuis le localStorage
- * @returns {Object|null} Données de l'utilisateur ou null
+ * Récupérer l'utilisateur courant depuis le localStorage
  */
 export const getCurrentUser = () => {
-  const userStr = localStorage.getItem('user');
-  return userStr ? JSON.parse(userStr) : null;
+    const userStr = localStorage.getItem('user');
+    if (!userStr) return null;
+
+    try {
+        return JSON.parse(userStr);
+    } catch (e) {
+        return null;
+    }
 };
 
 /**
- * Vérifie le token avec le serveur
- * @returns {Promise} Réponse de l'API avec les données utilisateur
+ * Savoir si l'utilisateur est authentifié (présence d'un token)
  */
-export const verifyToken = async () => {
-  const response = await api.get('/auth/verify');
-  return response.data;
+export const isAuthenticated = () => {
+    return Boolean(localStorage.getItem('token'));
 };
 
 /**
- * Demande de réinitialisation de mot de passe
- * @param {string} email - Email de l'utilisateur
- * @returns {Promise} Réponse de l'API
+ * Connexion classique
+ * @param {{email: string, password: string}} data
  */
-export const requestPasswordReset = async (email) => {
-  const response = await api.post('/auth/password-reset-request', { email });
-  return response.data;
+export const login = async (data) => {
+    const response = await api.post('/auth/login', data);
+
+    if (response.data?.token) {
+        enregistrerSession(response.data.token, response.data.user);
+    }
+
+    return response.data;
 };
 
 /**
- * Réinitialise le mot de passe avec le token
- * @param {Object} data - Token et nouveau mot de passe
- * @returns {Promise} Réponse de l'API
+ * Inscription classique
+ * @param {{email: string, password: string, pseudo: string}} data
+ */
+export const register = async (data) => {
+    const response = await api.post('/auth/register', data);
+
+    if (response.data?.token) {
+        enregistrerSession(response.data.token, response.data.user);
+    }
+
+    return response.data;
+};
+
+/**
+ * Déconnexion (front uniquement)
+ */
+export const logout = () => {
+    supprimerSession();
+};
+
+/**
+ * Vérifier la validité du token (si votre backend expose /auth/verify)
+ */
+export const verify = async () => {
+    const response = await api.get('/auth/verify');
+    return response.data;
+};
+
+/**
+ * Demander une réinitialisation de mot de passe
+ * Attention : adaptez l'URL si votre backend utilise un autre endpoint
+ * @param {{email: string}} data
+ */
+export const requestPasswordReset = async (data) => {
+    const response = await api.post('/auth/password-forgot', data);
+    return response.data;
+};
+
+/**
+ * Réinitialiser le mot de passe avec token
+ * Attention : adaptez l'URL si votre backend utilise un autre endpoint
+ * @param {{token: string, password: string}} data
  */
 export const resetPassword = async (data) => {
-  const response = await api.post('/auth/password-reset', data);
-  return response.data;
+    const response = await api.post('/auth/password-reset', data);
+    return response.data;
 };
 
+/**
+ * Connexion via Google (ID token)
+ * Le frontend reçoit credential (ID token) et l'envoie au backend.
+ * Le backend vérifie Google, puis renvoie votre JWT + user.
+ * @param {string} credential
+ */
+export const loginWithGoogle = async (credential) => {
+    const response = await api.post('/auth/oauth/google', { credential });
+
+    if (response.data?.token) {
+        enregistrerSession(response.data.token, response.data.user);
+    }
+
+    return response.data;
+};

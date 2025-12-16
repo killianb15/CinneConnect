@@ -68,8 +68,15 @@ const register = async (req, res) => {
     );
 
     const user = users[0];
+      if (!user.password_hash) {
+          return res.status(401).json({
+              error: 'Identifiants invalides',
+              message: 'Ce compte utilise une connexion externe (Google).'
+          });
+      }
 
-    // Générer le token JWT
+
+      // Générer le token JWT
     const token = jwt.sign(
       { userId: user.id, email: user.email },
       process.env.JWT_SECRET,
