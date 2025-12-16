@@ -2,7 +2,7 @@
  * Routes d'authentification
  * Gère l'inscription, la connexion et la récupération de mot de passe
  */
-
+const oauthController = require('../controllers/oauthController');
 const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/authController');
@@ -121,6 +121,7 @@ router.post('/register', validateRegister, authController.register);
  *         description: Identifiants invalides
  */
 router.post('/login', validateLogin, authController.login);
+router.post('/oauth/google', oauthController.loginGoogle);
 
 /**
  * @swagger
