@@ -169,7 +169,6 @@ function FilmDetailsPage() {
   if (!film) {
     return (
       <div className="film-details-page">
-        <div className="error">Film non trouvé</div>
         <button onClick={() => navigate(-1)} className="back-button">← Retour</button>
       </div>
     );
